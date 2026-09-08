@@ -21,21 +21,6 @@
 #include "jpge.h"
 #include "yuv.h"
 
-#include "esp_system.h"
-#if ESP_IDF_VERSION_MAJOR >= 4 // IDF 4+
-#if CONFIG_IDF_TARGET_ESP32 // ESP32/PICO-D4
-#include "esp32/spiram.h"
-#elif CONFIG_IDF_TARGET_ESP32S2
-#include "esp32s2/spiram.h"
-#elif CONFIG_IDF_TARGET_ESP32S3
-#include "esp32s3/spiram.h"
-#else 
-#error Target CONFIG_IDF_TARGET is not supported
-#endif
-#else // ESP32 Before IDF 4.0
-#include "esp_spiram.h"
-#endif
-
 #if defined(ARDUINO_ARCH_ESP32) && defined(CONFIG_ARDUHAL_ESP_LOG)
 #include "esp32-hal-log.h"
 #define TAG ""
@@ -44,13 +29,22 @@
 static const char* TAG = "to_jpg";
 #endif
 
+
+static jpge::subsampling_t default_subsampling = jpge::H2V2;
+static bool rgb565_big_endian = true;
+
 static void *_malloc(size_t size)
 {
     void * res = malloc(size);
     if(res) {
         return res;
     }
+
+    // check if SPIRAM is enabled and is allocatable
+#if ((CONFIG_SPIRAM || CONFIG_SPIRAM_SUPPORT) && (CONFIG_SPIRAM_USE_CAPS_ALLOC || CONFIG_SPIRAM_USE_MALLOC))
     return heap_caps_malloc(size, MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT);
+#endif
+    return NULL;
 }
 
 static IRAM_ATTR void convert_line_format(uint8_t * src, pixformat_t format, uint8_t * dst, size_t width, size_t in_channels, size_t line)
@@ -70,9 +64,15 @@ static IRAM_ATTR void convert_line_format(uint8_t * src, pixformat_t format, uin
         l = width * 2;
         src += l * line;
         for(i=0; i<l; i+=2) {
-            dst[o++] = src[i] & 0xF8;
-            dst[o++] = (src[i] & 0x07) << 5 | (src[i+1] & 0xE0) >> 3;
-            dst[o++] = (src[i+1] & 0x1F) << 3;
+            if (rgb565_big_endian) {
+                dst[o++] = src[i] & 0xF8;
+                dst[o++] = (src[i] & 0x07) << 5 | (src[i+1] & 0xE0) >> 3;
+                dst[o++] = (src[i+1] & 0x1F) << 3;
+            } else  {
+                dst[o++] = src[i+1] & 0xF8;
+                dst[o++] = (src[i+1] & 0x07) << 5 | (src[i] & 0xE0) >> 3;
+                dst[o++] = (src[i] & 0x1F) << 3;
+            }
         }
     } else if(format == PIXFORMAT_YUV422) {
         uint8_t y0, y1, u, v;
@@ -101,7 +101,7 @@ static IRAM_ATTR void convert_line_format(uint8_t * src, pixformat_t format, uin
 bool convert_image(uint8_t *src, uint16_t width, uint16_t height, pixformat_t format, uint8_t quality, jpge::output_stream *dst_stream)
 {
     int num_channels = 3;
-    jpge::subsampling_t subsampling = jpge::H2V2;
+    jpge::subsampling_t subsampling = default_subsampling;
 
     if(format == PIXFORMAT_GRAYSCALE) {
         num_channels = 1;
@@ -188,7 +188,7 @@ protected:
     size_t max_len, index;
 
 public:
-    memory_stream(void *pBuf, uint buf_size) : out_buf(static_cast<uint8_t*>(pBuf)), max_len(buf_size), index(0) { }
+    memory_stream(void *pBuf, size_t buf_size) : out_buf(static_cast<uint8_t*>(pBuf)), max_len(buf_size), index(0) { }
 
     virtual ~memory_stream() { }
 
@@ -242,4 +242,14 @@ bool fmt2jpg(uint8_t *src, size_t src_len, uint16_t width, uint16_t height, pixf
 bool frame2jpg(camera_fb_t * fb, uint8_t quality, uint8_t ** out, size_t * out_len)
 {
     return fmt2jpg(fb->buf, fb->len, fb->width, fb->height, fb->format, quality, out, out_len);
+}
+
+void jpgSetChroma(chroma_t chroma)
+{
+    default_subsampling = static_cast<jpge::subsampling_t>(chroma);
+}
+
+void jpgSetRgb565BE(bool enable)
+{
+    rgb565_big_endian = enable;
 }

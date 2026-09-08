@@ -26,6 +26,14 @@ typedef enum {
     GC2145_PID = 0x2145,
     GC032A_PID = 0x232a,
     GC0308_PID = 0x9b,
+    BF3005_PID = 0x30,
+    BF20A6_PID = 0x20a6,
+    SC101IOT_PID = 0xda4a,
+    SC030IOT_PID = 0x9a46,
+    SC031GS_PID = 0x0031,
+    MEGA_CCM_PID =0x039E, 
+    HM1055_PID = 0x0955,
+    HM0360_PID = 0x0360
 } camera_pid_t;
 
 typedef enum {
@@ -38,6 +46,14 @@ typedef enum {
     CAMERA_GC2145,
     CAMERA_GC032A,
     CAMERA_GC0308,
+    CAMERA_BF3005,
+    CAMERA_BF20A6,
+    CAMERA_SC101IOT,
+    CAMERA_SC030IOT,
+    CAMERA_SC031GS,
+    CAMERA_MEGA_CCM,
+    CAMERA_HM1055,
+    CAMERA_HM0360,
     CAMERA_MODEL_MAX,
     CAMERA_NONE,
 } camera_model_t;
@@ -52,26 +68,38 @@ typedef enum {
     GC2145_SCCB_ADDR   = 0x3C,// 0x78 >> 1
     GC032A_SCCB_ADDR   = 0x21,// 0x42 >> 1
     GC0308_SCCB_ADDR   = 0x21,// 0x42 >> 1
+    BF3005_SCCB_ADDR   = 0x6E,
+    BF20A6_SCCB_ADDR   = 0x6E,
+    SC101IOT_SCCB_ADDR = 0x68,// 0xd0 >> 1
+    SC030IOT_SCCB_ADDR = 0x68,// 0xd0 >> 1
+    SC031GS_SCCB_ADDR  = 0x30,
+    MEGA_CCM_SCCB_ADDR = 0x1F, // 0x3E >> 1
+    HM1055_SCCB_ADDR   = 0x24,
+    HM0360_SCCB_ADDR   = 0x12,
 } camera_sccb_addr_t;
 
 typedef enum {
     PIXFORMAT_RGB565,    // 2BPP/RGB565
     PIXFORMAT_YUV422,    // 2BPP/YUV422
+    PIXFORMAT_YUV420,    // 1.5BPP/YUV420
     PIXFORMAT_GRAYSCALE, // 1BPP/GRAYSCALE
     PIXFORMAT_JPEG,      // JPEG/COMPRESSED
     PIXFORMAT_RGB888,    // 3BPP/RGB888
     PIXFORMAT_RAW,       // RAW
     PIXFORMAT_RGB444,    // 3BP2P/RGB444
     PIXFORMAT_RGB555,    // 3BP2P/RGB555
+    PIXFORMAT_RAW8,      // RAW 8-bit
 } pixformat_t;
 
 typedef enum {
     FRAMESIZE_96X96,    // 96x96
     FRAMESIZE_QQVGA,    // 160x120
+    FRAMESIZE_128X128,    // 128x128
     FRAMESIZE_QCIF,     // 176x144
     FRAMESIZE_HQVGA,    // 240x176
     FRAMESIZE_240X240,  // 240x240
     FRAMESIZE_QVGA,     // 320x240
+    FRAMESIZE_320X320,  // 320x320
     FRAMESIZE_CIF,      // 400x296
     FRAMESIZE_HVGA,     // 480x320
     FRAMESIZE_VGA,      // 640x480
@@ -90,6 +118,7 @@ typedef enum {
     FRAMESIZE_WQXGA,    // 2560x1600
     FRAMESIZE_P_FHD,    // 1080x1920
     FRAMESIZE_QSXGA,    // 2560x1920
+    FRAMESIZE_5MP,      // 2592x1944
     FRAMESIZE_INVALID
 } framesize_t;
 
@@ -196,7 +225,7 @@ typedef struct _sensor {
 
     // Sensor function pointers
     int  (*init_status)         (sensor_t *sensor);
-    int  (*reset)               (sensor_t *sensor);
+    int  (*reset)               (sensor_t *sensor); // Reset the configuration of the sensor, and return ESP_OK if reset is successful
     int  (*set_pixformat)       (sensor_t *sensor, pixformat_t pixformat);
     int  (*set_framesize)       (sensor_t *sensor, framesize_t framesize);
     int  (*set_contrast)        (sensor_t *sensor, int level);
@@ -234,6 +263,14 @@ typedef struct _sensor {
     int  (*set_res_raw)         (sensor_t *sensor, int startX, int startY, int endX, int endY, int offsetX, int offsetY, int totalX, int totalY, int outputX, int outputY, bool scale, bool binning);
     int  (*set_pll)             (sensor_t *sensor, int bypass, int mul, int sys, int root, int pre, int seld5, int pclken, int pclk);
     int  (*set_xclk)            (sensor_t *sensor, int timer, int xclk);
+
+    // Autofocus function pointers (sensor-specific implementations)
+    int  (*af_is_supported)     (sensor_t *sensor);
+    int  (*af_init)             (sensor_t *sensor, uint32_t timeout_ms);
+    int  (*af_set_mode)         (sensor_t *sensor, int mode);  // 0=auto, 1=manual
+    int  (*af_trigger)          (sensor_t *sensor);
+    int  (*af_get_status)       (sensor_t *sensor, uint8_t *out_raw, bool *out_focused, bool *out_busy);
+    int  (*af_set_manual_position) (sensor_t *sensor, uint16_t position);
 } sensor_t;
 
 camera_sensor_info_t *esp_camera_sensor_get_info(sensor_id_t *id);

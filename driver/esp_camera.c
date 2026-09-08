@@ -54,7 +54,30 @@
 #if CONFIG_GC0308_SUPPORT
 #include "gc0308.h"
 #endif
-
+#if CONFIG_BF3005_SUPPORT
+#include "bf3005.h"
+#endif
+#if CONFIG_BF20A6_SUPPORT
+#include "bf20a6.h"
+#endif
+#if CONFIG_SC101IOT_SUPPORT
+#include "sc101iot.h"
+#endif
+#if CONFIG_SC030IOT_SUPPORT
+#include "sc030iot.h"
+#endif
+#if CONFIG_SC031GS_SUPPORT
+#include "sc031gs.h"
+#endif
+#if CONFIG_MEGA_CCM_SUPPORT
+#include "mega_ccm.h"
+#endif
+#if CONFIG_HM1055_SUPPORT
+#include "hm1055.h"
+#endif
+#if CONFIG_HM0360_SUPPORT
+#include "hm0360.h"
+#endif
 
 #if defined(ARDUINO_ARCH_ESP32) && defined(CONFIG_ARDUHAL_ESP_LOG)
 #include "esp32-hal-log.h"
@@ -72,6 +95,7 @@ typedef struct {
 static const char *CAMERA_SENSOR_NVS_KEY = "sensor";
 static const char *CAMERA_PIXFORMAT_NVS_KEY = "pixformat";
 static camera_state_t *s_state = NULL;
+static camera_config_t s_saved_config;
 
 #if CONFIG_IDF_TARGET_ESP32S3 // LCD_CAM module of ESP32-S3 will generate xclk
 #define CAMERA_ENABLE_OUT_CLOCK(v)
@@ -88,42 +112,67 @@ typedef struct {
 
 static const sensor_func_t g_sensors[] = {
 #if CONFIG_OV7725_SUPPORT
-    {ov7725_detect, ov7725_init},
+    {esp32_camera_ov7725_detect, esp32_camera_ov7725_init},
 #endif
 #if CONFIG_OV7670_SUPPORT
-    {ov7670_detect, ov7670_init},
+    {esp32_camera_ov7670_detect, esp32_camera_ov7670_init},
 #endif
 #if CONFIG_OV2640_SUPPORT
-    {ov2640_detect, ov2640_init},
+    {esp32_camera_ov2640_detect, esp32_camera_ov2640_init},
 #endif
 #if CONFIG_OV3660_SUPPORT
-    {ov3660_detect, ov3660_init},
+    {esp32_camera_ov3660_detect, esp32_camera_ov3660_init},
 #endif
 #if CONFIG_OV5640_SUPPORT
-    {ov5640_detect, ov5640_init},
+    {esp32_camera_ov5640_detect, esp32_camera_ov5640_init},
 #endif
 #if CONFIG_NT99141_SUPPORT
-    {nt99141_detect, nt99141_init},
+    {esp32_camera_nt99141_detect, esp32_camera_nt99141_init},
 #endif
 #if CONFIG_GC2145_SUPPORT
-    {gc2145_detect, gc2145_init},
+    {esp32_camera_gc2145_detect, esp32_camera_gc2145_init},
 #endif
 #if CONFIG_GC032A_SUPPORT
-    {gc032a_detect, gc032a_init},
+    {esp32_camera_gc032a_detect, esp32_camera_gc032a_init},
 #endif
 #if CONFIG_GC0308_SUPPORT
-    {gc0308_detect, gc0308_init},
+    {esp32_camera_gc0308_detect, esp32_camera_gc0308_init},
+#endif
+#if CONFIG_BF3005_SUPPORT
+    {esp32_camera_bf3005_detect, esp32_camera_bf3005_init},
+#endif
+#if CONFIG_BF20A6_SUPPORT
+    {esp32_camera_bf20a6_detect, esp32_camera_bf20a6_init},
+#endif
+#if CONFIG_SC101IOT_SUPPORT
+    {esp32_camera_sc101iot_detect, esp32_camera_sc101iot_init},
+#endif
+#if CONFIG_SC030IOT_SUPPORT
+    {esp32_camera_sc030iot_detect, esp32_camera_sc030iot_init},
+#endif
+#if CONFIG_SC031GS_SUPPORT
+    {esp32_camera_sc031gs_detect, esp32_camera_sc031gs_init},
+#endif
+#if CONFIG_MEGA_CCM_SUPPORT
+    {esp32_camera_mega_ccm_detect, esp32_camera_mega_ccm_init},
+#endif
+#if CONFIG_HM1055_SUPPORT
+    {esp32_camera_hm1055_detect, esp32_camera_hm1055_init},
+#endif
+#if CONFIG_HM0360_SUPPORT
+    {esp32_camera_hm0360_detect, esp32_camera_hm0360_init},
 #endif
 };
 
 static esp_err_t camera_probe(const camera_config_t *config, camera_model_t *out_camera_model)
 {
+    esp_err_t ret = ESP_OK;
     *out_camera_model = CAMERA_NONE;
     if (s_state != NULL) {
         return ESP_ERR_INVALID_STATE;
     }
 
-    s_state = (camera_state_t *) calloc(sizeof(camera_state_t), 1);
+    s_state = (camera_state_t *) calloc(1, sizeof(camera_state_t));
     if (!s_state) {
         return ESP_ERR_NO_MEM;
     }
@@ -133,9 +182,17 @@ static esp_err_t camera_probe(const camera_config_t *config, camera_model_t *out
         CAMERA_ENABLE_OUT_CLOCK(config);
     }
 
-    if (config->pin_sscb_sda != -1) {
-        ESP_LOGD(TAG, "Initializing SSCB");
-        SCCB_Init(config->pin_sscb_sda, config->pin_sscb_scl);
+    if (config->pin_sccb_sda != -1) {
+        ESP_LOGD(TAG, "Initializing SCCB");
+        ret = SCCB_Init(config->pin_sccb_sda, config->pin_sccb_scl);
+    } else {
+        ESP_LOGD(TAG, "Using existing I2C port");
+        ret = SCCB_Use_Port(config->sccb_i2c_port);
+    }
+
+    if(ret != ESP_OK) {
+        ESP_LOGE(TAG, "sccb init err");
+        goto err;
     }
 
     if (config->pin_pwdn >= 0) {
@@ -145,7 +202,7 @@ static esp_err_t camera_probe(const camera_config_t *config, camera_model_t *out
         conf.mode = GPIO_MODE_OUTPUT;
         gpio_config(&conf);
 
-        // carefull, logic is inverted compared to reset pin
+        // careful, logic is inverted compared to reset pin
         gpio_set_level(config->pin_pwdn, 1);
         vTaskDelay(10 / portTICK_PERIOD_MS);
         gpio_set_level(config->pin_pwdn, 0);
@@ -165,57 +222,84 @@ static esp_err_t camera_probe(const camera_config_t *config, camera_model_t *out
         vTaskDelay(10 / portTICK_PERIOD_MS);
     }
 
-
     ESP_LOGD(TAG, "Searching for camera address");
     vTaskDelay(10 / portTICK_PERIOD_MS);
 
-    uint8_t slv_addr = SCCB_Probe();
-
-    if (slv_addr == 0) {
-        CAMERA_DISABLE_OUT_CLOCK();
-        return ESP_ERR_NOT_FOUND;
-    }
-
-    ESP_LOGI(TAG, "Detected camera at address=0x%02x", slv_addr);
-    s_state->sensor.slv_addr = slv_addr;
-    s_state->sensor.xclk_freq_hz = config->xclk_freq_hz;
+    int camera_model_id;
+    uint8_t slv_addr = 0x0;
 
     /**
-     * Read sensor ID and then initialize sensor
-     * Attention: Some sensors have the same SCCB address. Therefore, several attempts may be made in the detection process
+     * This loop probes each known sensor until a supported camera is detected
      */
-    sensor_id_t *id = &s_state->sensor.id;
-    for (size_t i = 0; i < sizeof(g_sensors) / sizeof(sensor_func_t); i++) {
-        if (g_sensors[i].detect(slv_addr, id)) {
-            camera_sensor_info_t *info = esp_camera_sensor_get_info(id);
-            if (NULL != info) {
-                *out_camera_model = info->model;
-                ESP_LOGI(TAG, "Detected %s camera", info->name);
-                g_sensors[i].init(&s_state->sensor);
-                break;
+    for(camera_model_id = 0; *out_camera_model == CAMERA_NONE && camera_model_id < CAMERA_MODEL_MAX ; camera_model_id++) {
+        slv_addr = camera_sensor[camera_model_id].sccb_addr;
+
+        if (ESP_OK != SCCB_Probe(slv_addr)) {
+            continue;
+        }
+
+        s_state->sensor.slv_addr = slv_addr;
+        s_state->sensor.xclk_freq_hz = config->xclk_freq_hz;
+
+        /**
+         * Read sensor ID and then initialize sensor
+         * Attention: Some sensors have the same SCCB address. Therefore, several attempts may be made in the detection process
+         */
+        sensor_id_t *id = &s_state->sensor.id;
+
+        for (size_t i = 0; i < sizeof(g_sensors) / sizeof(sensor_func_t); i++) {
+            if (g_sensors[i].detect(slv_addr, id)) {
+                ESP_LOGI(TAG, "Camera PID=0x%02x VER=0x%02x MIDL=0x%02x MIDH=0x%02x",
+                    id->PID, id->VER, id->MIDH, id->MIDL);
+                camera_sensor_info_t *info = esp_camera_sensor_get_info(id);
+                if (NULL != info) {
+                    *out_camera_model = info->model;
+                    ESP_LOGI(TAG, "Detected %s camera", info->name);
+                    g_sensors[i].init(&s_state->sensor);
+                    break;
+                }
             }
         }
     }
 
     if (CAMERA_NONE == *out_camera_model) { //If no supported sensors are detected
-        CAMERA_DISABLE_OUT_CLOCK();
         ESP_LOGE(TAG, "Detected camera not supported.");
-        return ESP_ERR_NOT_SUPPORTED;
+        ret = ESP_ERR_NOT_SUPPORTED;
+        goto err;
     }
 
-    ESP_LOGI(TAG, "Camera PID=0x%02x VER=0x%02x MIDL=0x%02x MIDH=0x%02x",
-             id->PID, id->VER, id->MIDH, id->MIDL);
+    ESP_LOGI(TAG, "Detected camera at address=0x%02x", slv_addr);
 
     ESP_LOGD(TAG, "Doing SW reset of sensor");
     vTaskDelay(10 / portTICK_PERIOD_MS);
-    s_state->sensor.reset(&s_state->sensor);
 
-    return ESP_OK;
+    return s_state->sensor.reset(&s_state->sensor);
+err :
+    CAMERA_DISABLE_OUT_CLOCK();
+    return ret;
 }
+
+#if CONFIG_CAMERA_CONVERTER_ENABLED
+static pixformat_t get_output_data_format(camera_conv_mode_t conv_mode)
+{
+    pixformat_t format = PIXFORMAT_RGB565;
+    switch (conv_mode) {
+    case YUV422_TO_YUV420:
+        format = PIXFORMAT_YUV420;
+        break;
+    case YUV422_TO_RGB565: // default format is RGB565
+    default:
+        break;
+    }
+    ESP_LOGD(TAG, "Convert to %d format enabled", format);
+    return format;
+}
+#endif
 
 esp_err_t esp_camera_init(const camera_config_t *config)
 {
     esp_err_t err;
+    s_saved_config = *config;
     err = cam_init(config);
     if (err != ESP_OK) {
         ESP_LOGE(TAG, "Camera init failed with error 0x%x", err);
@@ -251,6 +335,7 @@ esp_err_t esp_camera_init(const camera_config_t *config)
 
     s_state->sensor.status.framesize = frame_size;
     s_state->sensor.pixformat = pix_format;
+
     ESP_LOGD(TAG, "Setting frame size to %dx%d", resolution[frame_size].width, resolution[frame_size].height);
     if (s_state->sensor.set_framesize(&s_state->sensor, frame_size) != 0) {
         ESP_LOGE(TAG, "Failed to set frame size");
@@ -258,6 +343,11 @@ esp_err_t esp_camera_init(const camera_config_t *config)
         goto fail;
     }
     s_state->sensor.set_pixformat(&s_state->sensor, pix_format);
+#if CONFIG_CAMERA_CONVERTER_ENABLED
+    if(config->conv_mode) {
+        s_state->sensor.pixformat = get_output_data_format(config->conv_mode); // If conversion enabled, change the out data format by conversion mode
+    }
+#endif
 
     if (s_state->sensor.id.PID == OV2640_PID) {
         s_state->sensor.set_gainceiling(&s_state->sensor, GAINCEILING_2X);
@@ -413,4 +503,48 @@ esp_err_t esp_camera_load_from_nvs(const char *key)
         ESP_LOGW(TAG, "Error (%d) opening nvs key \"%s\"", ret, key);
         return ret;
     }
+}
+
+void esp_camera_return_all(void) {
+    if (s_state == NULL) {
+        return;
+    }
+    cam_give_all();
+}
+
+bool esp_camera_available_frames(void)
+{
+    if (s_state == NULL) {
+        return false;
+    }
+    return cam_get_available_frames();
+}
+
+esp_err_t esp_camera_reconfigure(const camera_config_t *config)
+{
+    if (!config) {
+        return ESP_ERR_INVALID_ARG;
+    }
+    if (s_state) {
+        esp_err_t err = esp_camera_deinit();
+        if (err != ESP_OK) {
+            return err;
+        }
+    }
+    s_saved_config = *config;
+    return esp_camera_init(&s_saved_config);
+}
+
+esp_err_t esp_camera_set_psram_mode(bool enable)
+{
+    cam_set_psram_mode(enable);
+    if (!s_state) {
+        return ESP_ERR_INVALID_STATE;
+    }
+    return esp_camera_reconfigure(&s_saved_config);
+}
+
+bool esp_camera_get_psram_mode(void)
+{
+    return cam_get_psram_mode();
 }

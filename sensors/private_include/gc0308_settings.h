@@ -3,10 +3,9 @@
 
 #include <stdint.h>
 
-#define REG_DLY 0xffff
-#define REGLIST_TAIL 0x0000 /* Array end token */
+#define REG_DLY 0xff
 
-static const uint16_t gc0308_sensor_default_regs[][2] = {
+static const uint8_t gc0308_sensor_default_regs[][2] = {
     {0xfe, 0x00},
     {0xec, 0x20},
     {0x05, 0x00},
@@ -23,7 +22,7 @@ static const uint16_t gc0308_sensor_default_regs[][2] = {
     {0x11, 0x0d},
     {0x12, 0x2a},
     {0x13, 0x00},
-    {0x14, 0x11},
+    {0x14, 0x10}, // Linux kernel: CISCTL_MODE1 = 0x10 (no mirror/flip by default)
     {0x15, 0x0a},
     {0x16, 0x05},
     {0x17, 0x01},
@@ -57,12 +56,16 @@ static const uint16_t gc0308_sensor_default_regs[][2] = {
     {0x3d, 0x00},
     {0x3e, 0x00},
     {0x3f, 0x00},
-    {0x50, 0x14}, // 0x14
+    {0x50, 0x14}, // GLOBAL_GAIN = 0x14 (default gain)
     {0x52, 0x41},
     {0x53, 0x80},
     {0x54, 0x80},
     {0x55, 0x80},
     {0x56, 0x80},
+    // AWB Gain initialization (from Linux kernel driver)
+    {0x5a, 0x56}, // AWB_R_GAIN: Red gain for auto white balance
+    {0x5b, 0x40}, // AWB_G_GAIN: Green gain for auto white balance
+    {0x5c, 0x4a}, // AWB_B_GAIN: Blue gain for auto white balance
     {0x8b, 0x20},
     {0x8c, 0x20},
     {0x8d, 0x20},
@@ -239,7 +242,21 @@ static const uint16_t gc0308_sensor_default_regs[][2] = {
     {0x65, 0xd3},
     {0x66, 0x60},
     {0xfe, 0x00},
-    {REGLIST_TAIL, 0x00},
+
+    {0x01, 0x32},   //frame setting                            
+	{0x02, 0x0c},                                  
+	{0x0f, 0x01},                                                                                                                     
+	{0xe2, 0x00},  
+	{0xe3, 0x78},                                                             
+	{0xe4, 0x00},      
+	{0xe5, 0xfe},  
+	{0xe6, 0x01},  
+	{0xe7, 0xe0},  
+	{0xe8, 0x01},  
+	{0xe9, 0xe0},  
+	{0xea, 0x01},  
+	{0xeb, 0xe0},
+	{0xfe, 0x00},
 };
 
 #endif

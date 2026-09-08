@@ -166,7 +166,7 @@ static int set_pixformat(sensor_t *sensor, pixformat_t pixformat)
         ret = set_reg_bits(sensor->slv_addr, P0_OUTPUT_FORMAT, 0, 0x1f, 2); //yuv422
         break;
     default:
-        ESP_LOGW(TAG, "unsupport format");
+        ESP_LOGW(TAG, "unsupported format");
         ret = -1;
         break;
     }
@@ -190,6 +190,8 @@ static int set_framesize(sensor_t *sensor, framesize_t framesize)
     uint16_t h = resolution[framesize].height;
     uint16_t row_s = (resolution[FRAMESIZE_UXGA].height - h) / 2;
     uint16_t col_s = (resolution[FRAMESIZE_UXGA].width - w) / 2;
+    (void)row_s;
+    (void)col_s;
 
 #if CONFIG_GC_SENSOR_SUBSAMPLE_MODE
     struct subsample_cfg {
@@ -412,7 +414,7 @@ static int set_gainceiling_dummy(sensor_t *sensor, gainceiling_t val)
     return -1;
 }
 
-int gc2145_detect(int slv_addr, sensor_id_t *id)
+int esp32_camera_gc2145_detect(int slv_addr, sensor_id_t *id)
 {
     if (GC2145_SCCB_ADDR == slv_addr) {
         uint8_t MIDL = SCCB_Read(slv_addr, CHIP_ID_LOW);
@@ -428,7 +430,7 @@ int gc2145_detect(int slv_addr, sensor_id_t *id)
     return 0;
 }
 
-int gc2145_init(sensor_t *sensor)
+int esp32_camera_gc2145_init(sensor_t *sensor)
 {
     sensor->init_status = init_status;
     sensor->reset = reset;
@@ -469,6 +471,14 @@ int gc2145_init(sensor_t *sensor)
     sensor->set_res_raw = NULL;
     sensor->set_pll = NULL;
     sensor->set_xclk = NULL;
+
+    // No autofocus support
+    sensor->af_is_supported = NULL;
+    sensor->af_init = NULL;
+    sensor->af_set_mode = NULL;
+    sensor->af_trigger = NULL;
+    sensor->af_get_status = NULL;
+    sensor->af_set_manual_position = NULL;
 
     ESP_LOGD(TAG, "GC2145 Attached");
     return 0;
